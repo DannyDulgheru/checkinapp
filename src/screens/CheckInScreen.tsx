@@ -1,257 +1,419 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePersistentTimer } from '../hooks/usePersistentTimer';
-import { saveCheckIn, clearActiveCheckIn, getActiveCheckIn } from '../services/storageService';
+import { saveCheckIn, clearActiveCheckIn, getActiveCheckIn, getAppSettings } from '../services/storageService';
 import { CheckInRecord } from '../types/checkIn';
 import { pushService } from '../services/pushService';
 import { scheduleNotification, cancelScheduledNotification, scheduleRecurringNotifications } from '../services/notificationService';
-import '../styles/CheckInScreen.css';
+import { useTheme } from '../contexts/ThemeContext';
+import './CheckInScreen.css';
 
 export default function CheckInScreen() {
-  const {
-    seconds,
-    isRunning,
-    isCheckedIn,
-    startCheckIn,
-    pause,
-    resume,
-    reset,
-    checkOut,
-  } = usePersistentTimer();
-  const [checkInStartTime, setCheckInStartTime] = useState<string | null>(null);
-  const [notificationSent, setNotificationSent] = useState(false);
-  const checkInIdRef = useRef<string | null>(null);
-  const lastRecurringNotificationRef = useRef<number>(0);
+  try {
+    const { theme, isDark } = useTheme();
+    const [screenWidth, setScreenWidth] = useState(window.innerWidth);
+    const [screenHeight, setScreenHeight] = useState(window.innerHeight);
 
-  useEffect(() => {
-    // Initialize push service
-    pushService.initialize();
-    // Subscribe to push notifications
-    pushService.subscribe();
+    useEffect(() => {
+      const handleResize = () => {
+        setScreenWidth(window.innerWidth);
+        setScreenHeight(window.innerHeight);
+      };
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
-    // Listen for messages from Service Worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data?.type === 'REQUEST_CHECKIN_STATE') {
-          // Send current check-in state to Service Worker
-          const state = getActiveCheckIn();
-          if (state && checkInIdRef.current) {
-            scheduleNotification(checkInIdRef.current, state.startTime, 120);
+    const {
+      seconds,
+      isRunning,
+      isCheckedIn,
+      startCheckIn,
+      pause,
+      resume,
+      reset,
+      checkOut,
+    } = usePersistentTimer();
+    const [checkInStartTime, setCheckInStartTime] = useState<string | null>(null);
+    const [notificationSent, setNotificationSent] = useState(false);
+    const [targetHours, setTargetHours] = useState<number>(32400); // Default 9 hours
+    const checkInIdRef = useRef<string | null>(null);
+    const lastRecurringNotificationRef = useRef<number>(0);
+
+    useEffect(() => {
+      // Initialize push service
+      pushService.initialize();
+      pushService.requestPermission();
+      
+      // Load settings
+      const loadSettings = async () => {
+        try {
+          const settings = await getAppSettings();
+          setTargetHours(settings.targetHours);
+        } catch (error) {
+          console.error('Error loading settings:', error);
+        }
+      };
+      loadSettings();
+    }, []);
+
+    // Update checkInStartTime when isCheckedIn changes
+    useEffect(() => {
+      const loadState = async () => {
+        if (isCheckedIn) {
+          const savedState = await getActiveCheckIn();
+          if (savedState) {
+            setCheckInStartTime(savedState.startTime);
+            
+            // Re-schedule notification if check-in was restored from storage
+            if (!checkInIdRef.current) {
+              checkInIdRef.current = `checkin-${Date.now()}`;
+              const startTimestamp = new Date(savedState.startTime).getTime();
+              const now = Date.now();
+              const elapsed = Math.floor((now - startTimestamp) / 1000) - (savedState.pausedDuration || 0);
+              
+              // Only schedule if we haven't reached target hours yet
+              if (elapsed < targetHours) {
+                await scheduleNotification(checkInIdRef.current, savedState.startTime, targetHours);
+                console.log('[CheckInScreen] Restored check-in, scheduled notification for target hours');
+              } else {
+                // If past target hours, start recurring notifications immediately
+                await scheduleRecurringNotifications(checkInIdRef.current, savedState.startTime, targetHours);
+                // Mark target hours notification as sent
+                setNotificationSent(true);
+                // Set last recurring notification to avoid duplicate
+                const minutesSinceTarget = Math.floor((elapsed - targetHours) / 60);
+                lastRecurringNotificationRef.current = targetHours + (Math.floor(minutesSinceTarget / 5) * 5 * 60);
+              }
+            }
+          }
+        } else {
+          setCheckInStartTime(null);
+          checkInIdRef.current = null;
+        }
+      };
+      
+      loadState();
+    }, [isCheckedIn, targetHours]);
+
+    // Monitor timer for target hours notification and recurring notifications (fallback when app is open)
+    useEffect(() => {
+      if (isCheckedIn) {
+        // First notification at target hours
+        if (seconds >= targetHours && !notificationSent) {
+          // Send notification when reaching target hours (only if app is open)
+          const hours = Math.floor(targetHours / 3600);
+          pushService.sendLocalNotification(`${hours} ore atinse!`, {
+            body: `Ai făcut ${hours} ${hours === 1 ? 'oră' : 'ore'} de check-in!`,
+            data: {
+              url: '/',
+            },
+          });
+          setNotificationSent(true);
+          console.log('Notificare trimisă la target hours (app open):', seconds);
+          
+          // Start recurring notifications
+          if (checkInIdRef.current && checkInStartTime) {
+            scheduleRecurringNotifications(checkInIdRef.current, checkInStartTime, targetHours);
+            lastRecurringNotificationRef.current = seconds;
           }
         }
-      });
-    }
-  }, []);
-
-  // Update checkInStartTime when isCheckedIn changes
-  useEffect(() => {
-    if (isCheckedIn) {
-      const savedState = getActiveCheckIn();
-      if (savedState) {
-        setCheckInStartTime(savedState.startTime);
         
-        // Re-schedule notification if check-in was restored from storage
-        if (!checkInIdRef.current) {
-          checkInIdRef.current = `checkin-${Date.now()}`;
-          const startTimestamp = new Date(savedState.startTime).getTime();
-          const now = Date.now();
-          const elapsed = Math.floor((now - startTimestamp) / 1000) - (savedState.pausedDuration || 0);
-          
-          // Only schedule if we haven't reached 9 hours yet
-          if (elapsed < 32400) {
-            scheduleNotification(checkInIdRef.current, savedState.startTime, 32400);
-            console.log('[CheckInScreen] Restored check-in, scheduled notification for 9 hours');
-          } else {
-            // If past 9 hours, start recurring notifications immediately
-            scheduleRecurringNotifications(checkInIdRef.current, savedState.startTime);
-            // Mark 9 hours notification as sent
-            setNotificationSent(true);
-            // Set last recurring notification to avoid duplicate
-            const minutesSince9Hours = Math.floor((elapsed - 32400) / 60);
-            lastRecurringNotificationRef.current = 32400 + (Math.floor(minutesSince9Hours / 5) * 5 * 60);
+        // Recurring notifications every 5 minutes after target hours
+        if (seconds >= targetHours && seconds > lastRecurringNotificationRef.current) {
+          const minutesSinceTarget = Math.floor((seconds - targetHours) / 60);
+          // Send notification every 5 minutes
+          if (minutesSinceTarget > 0 && minutesSinceTarget % 5 === 0) {
+            const lastNotificationMinutes = Math.floor((lastRecurringNotificationRef.current - targetHours) / 60);
+            // Only send if this is a new 5-minute mark
+            if (lastNotificationMinutes < minutesSinceTarget) {
+              pushService.sendLocalNotification('Done Work', {
+                body: 'Ai făcut ' + formatTime(seconds) + ' de check-in!',
+                data: {
+                  url: '/',
+                },
+              });
+              lastRecurringNotificationRef.current = seconds;
+              console.log('Notificare recurentă "Done Work" (app open):', seconds);
+            }
           }
         }
       }
-    } else {
-      setCheckInStartTime(null);
-      checkInIdRef.current = null;
-    }
-  }, [isCheckedIn]);
+    }, [seconds, isCheckedIn, notificationSent, checkInStartTime, targetHours]);
 
-  // Monitor timer for 9 hours notification and recurring notifications (fallback when app is open)
-  useEffect(() => {
-    if (isCheckedIn) {
-      // First notification at 9 hours
-      if (seconds >= 32400 && !notificationSent) {
-        // Send notification when reaching 9 hours (only if app is open)
-        pushService.sendLocalNotification('9 ore atinse!', {
-          body: 'Ai făcut 9 ore de check-in!',
-          icon: '/icons/icon-192.png',
-          badge: '/icons/icon-192.png',
-          tag: '9hours',
+    const formatTime = (totalSeconds: number): string => {
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const secs = totalSeconds % 60;
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    };
+
+    const handleCheckIn = async () => {
+      startCheckIn();
+      const startTime = new Date().toISOString();
+      setCheckInStartTime(startTime);
+      setNotificationSent(false);
+      
+      // Generate unique check-in ID
+      checkInIdRef.current = `checkin-${Date.now()}`;
+      
+      // Schedule notification in Service Worker for background notifications
+      await scheduleNotification(checkInIdRef.current, startTime, targetHours);
+      console.log('[CheckInScreen] Scheduled notification for target hours');
+    };
+
+    const handleCheckOut = async () => {
+      if (!isCheckedIn || !checkInStartTime) {
+        window.alert('Eroare: Trebuie să faci check-in mai întâi!');
+        return;
+      }
+
+      try {
+        const endTime = new Date().toISOString();
+        const record: CheckInRecord = {
+          id: Date.now().toString(),
+          startTime: checkInStartTime,
+          endTime: endTime,
+          duration: seconds,
+          status: 'checked-out',
+        };
+
+        await saveCheckIn(record);
+        
+        window.alert('Succes: Check-out realizat cu succes!');
+        
+        // Send push notification
+        await pushService.sendLocalNotification('Check-out realizat!', {
+          body: `Durată: ${formatTime(seconds)}`,
           data: {
             url: '/',
           },
         });
-        setNotificationSent(true);
-        console.log('Notificare trimisă la 9 ore (app open):', seconds);
         
-        // Start recurring notifications
-        if (checkInIdRef.current && checkInStartTime) {
-          scheduleRecurringNotifications(checkInIdRef.current, checkInStartTime);
-          lastRecurringNotificationRef.current = seconds;
+        // Cancel scheduled notification
+        if (checkInIdRef.current) {
+          await cancelScheduledNotification(checkInIdRef.current);
+          checkInIdRef.current = null;
         }
+        
+        // Clear saved state and reset
+        await clearActiveCheckIn();
+        setNotificationSent(false);
+        lastRecurringNotificationRef.current = 0;
+        checkOut();
+      } catch (error) {
+        window.alert('Eroare: Nu s-a putut salva check-out-ul');
+        console.error(error);
       }
-      
-      // Recurring notifications every 5 minutes after 9 hours
-      if (seconds >= 32400 && seconds > lastRecurringNotificationRef.current) {
-        const minutesSince9Hours = Math.floor((seconds - 32400) / 60);
-        // Send notification every 5 minutes
-        if (minutesSince9Hours > 0 && minutesSince9Hours % 5 === 0) {
-          const lastNotificationMinutes = Math.floor((lastRecurringNotificationRef.current - 32400) / 60);
-          // Only send if this is a new 5-minute mark
-          if (lastNotificationMinutes < minutesSince9Hours) {
-            pushService.sendLocalNotification('Done Work', {
-              body: 'Ai făcut ' + formatTime(seconds) + ' de check-in!',
-              icon: '/icons/icon-192.png',
-              badge: '/icons/icon-192.png',
-              tag: 'done-work-' + minutesSince9Hours,
-              data: {
-                url: '/',
-              },
-            });
-            lastRecurringNotificationRef.current = seconds;
-            console.log('Notificare recurentă "Done Work" (app open):', seconds);
-          }
-        }
-      }
-    }
-  }, [seconds, isCheckedIn, notificationSent, checkInStartTime]);
+    };
 
-  const formatTime = (totalSeconds: number): string => {
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const secs = totalSeconds % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
+    const isSmallScreen = screenHeight < 700;
+    const timerFontSize = isSmallScreen ? 52 : screenWidth < 375 ? 60 : 72;
 
-  const handleCheckIn = () => {
-    startCheckIn();
-    const startTime = new Date().toISOString();
-    setCheckInStartTime(startTime);
-    setNotificationSent(false);
-    
-    // Generate unique check-in ID
-    checkInIdRef.current = `checkin-${Date.now()}`;
-    
-    // Schedule notification in Service Worker for background notifications (9 hours)
-    scheduleNotification(checkInIdRef.current, startTime, 32400); // 9 hours = 32400 seconds
-    console.log('[CheckInScreen] Scheduled notification for 9 hours');
-  };
+    const containerStyle: React.CSSProperties = {
+      display: 'flex',
+      flexDirection: 'column',
+      backgroundColor: theme.colors.background,
+      paddingTop: 'max(20px, env(safe-area-inset-top))', // iOS notch support
+      minHeight: '100vh',
+      minHeight: '-webkit-fill-available' as any, // iOS Safari
+      width: '100%',
+    };
 
-  const handleCheckOut = async () => {
-    if (!isCheckedIn || !checkInStartTime) {
-      window.alert('Trebuie să faci check-in mai întâi!');
-      return;
-    }
+    const contentContainerStyle: React.CSSProperties = {
+      display: 'flex',
+      flexDirection: 'column',
+      flexGrow: 1,
+      justifyContent: 'center',
+      padding: '24px',
+      paddingBottom: '100px',
+      alignItems: 'center',
+      minHeight: 'calc(100vh - 100px)',
+    };
 
-    try {
-      const endTime = new Date().toISOString();
-      const record: CheckInRecord = {
-        id: Date.now().toString(),
-        startTime: checkInStartTime,
-        endTime: endTime,
-        duration: seconds,
-        status: 'checked-out',
-      };
+    const timerCardStyle: React.CSSProperties = {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: '24px',
+      padding: '32px',
+      width: '100%',
+      maxWidth: '400px',
+      marginBottom: '24px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
+      border: isDark ? `1px solid ${theme.colors.border}` : 'none',
+    };
 
-      await saveCheckIn(record);
-      
-      window.alert('Check-out realizat cu succes!');
-      
-      // Send push notification
-      await pushService.sendLocalNotification('Check-out realizat!', {
-        body: `Durată: ${formatTime(seconds)}`,
-        icon: '/icons/icon-192.png',
-        badge: '/icons/icon-192.png',
-        tag: 'checkout',
-        data: {
-          url: '/',
-        },
-      });
-      
-      // Cancel scheduled notification
-      if (checkInIdRef.current) {
-        cancelScheduledNotification(checkInIdRef.current);
-        checkInIdRef.current = null;
-      }
-      
-      // Clear saved state and reset
-      clearActiveCheckIn();
-      setNotificationSent(false);
-      lastRecurringNotificationRef.current = 0;
-      checkOut();
-    } catch (error) {
-      window.alert('Nu s-a putut salva check-out-ul');
-      console.error(error);
-    }
-  };
+    const timerLabelStyle: React.CSSProperties = {
+      fontSize: '11px',
+      fontWeight: 600,
+      color: theme.colors.textSecondary,
+      letterSpacing: '1px',
+      marginBottom: '12px',
+      textTransform: 'uppercase',
+      fontFamily: theme.fonts.medium,
+    };
 
-  return (
-    <div className="checkin-container">
-      <div className="timer-container">
-        <span className="timer-text">{formatTime(seconds)}</span>
-      </div>
+    const timerTextStyle: React.CSSProperties = {
+      fontSize: `${timerFontSize}px`,
+      fontWeight: 700,
+      color: theme.colors.text,
+      textAlign: 'center',
+      letterSpacing: '-2px',
+      fontFamily: theme.fonts.bold,
+    };
 
-      <div className="button-container">
-        {!isCheckedIn ? (
-          <button
-            className="button check-in-button"
-            onClick={handleCheckIn}
-          >
-            Check-in
-          </button>
-        ) : (
-          <>
-            {!isRunning ? (
+    const buttonContainerStyle: React.CSSProperties = {
+      width: '100%',
+      maxWidth: '400px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+    };
+
+    const buttonStyle: React.CSSProperties = {
+      width: '100%',
+      padding: '16px 24px',
+      borderRadius: '16px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: theme.colors.primary,
+      boxShadow: isDark ? '0 2px 4px rgba(0, 0, 0, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.1)',
+      border: 'none',
+      cursor: 'pointer',
+      transition: 'opacity 0.2s',
+    };
+
+    const buttonTextStyle: React.CSSProperties = {
+      color: isDark && theme.colors.primary === '#000000' ? '#FFFFFF' : (isDark ? theme.colors.background : '#FFFFFF'),
+      fontSize: '17px',
+      fontWeight: 700,
+      fontFamily: theme.fonts.bold,
+    };
+
+    return (
+      <div style={containerStyle}>
+        <div style={contentContainerStyle}>
+          <div style={timerCardStyle}>
+            <div style={timerLabelStyle}>ELAPSED TIME</div>
+            <div style={timerTextStyle}>{formatTime(seconds)}</div>
+          </div>
+
+          <div style={buttonContainerStyle}>
+            {!isCheckedIn ? (
               <button
-                className="button start-button"
-                onClick={resume}
+                style={buttonStyle}
+                onClick={handleCheckIn}
+                onMouseDown={(e) => e.currentTarget.style.opacity = '0.9'}
+                onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
               >
-                Reia
+                <span style={buttonTextStyle}>Check-in</span>
               </button>
             ) : (
-              <button
-                className="button stop-button"
-                onClick={pause}
-              >
-                Pause
-              </button>
+              <>
+                {!isRunning ? (
+                  <button
+                    style={buttonStyle}
+                    onClick={resume}
+                    onMouseDown={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+                  >
+                    <span style={buttonTextStyle}>Reia</span>
+                  </button>
+                ) : (
+                  <button
+                    style={buttonStyle}
+                    onClick={pause}
+                    onMouseDown={(e) => e.currentTarget.style.opacity = '0.9'}
+                    onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+                  >
+                    <span style={buttonTextStyle}>Pause</span>
+                  </button>
+                )}
+
+                <button
+                  style={buttonStyle}
+                  onClick={handleCheckOut}
+                  onMouseDown={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+                >
+                  <span style={buttonTextStyle}>Check-out</span>
+                </button>
+              </>
             )}
+          </div>
 
-            <button
-              className="button check-out-button"
-              onClick={handleCheckOut}
-            >
-              Check-out
-            </button>
-          </>
-        )}
-      </div>
-
-      {isCheckedIn && checkInStartTime && (
-        <div className="status-container">
-          <p className="status-text">
-            Status: Check-in efectuat la {new Date(checkInStartTime).toLocaleString('ro-RO')}
-          </p>
-          <p className="status-text">
-            Check-out estimat: {(() => {
-              const startTime = new Date(checkInStartTime);
-              const estimatedCheckOut = new Date(startTime.getTime() + 32400 * 1000); // 9 hours = 32400 seconds
-              return estimatedCheckOut.toLocaleString('ro-RO');
-            })()}
-          </p>
+          {isCheckedIn && checkInStartTime && (
+            <div style={{
+              backgroundColor: theme.colors.cardBackground,
+              borderRadius: '24px',
+              padding: '24px',
+              width: '100%',
+              maxWidth: '400px',
+              marginTop: '24px',
+              boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
+              border: isDark ? `1px solid ${theme.colors.border}` : 'none',
+            }}>
+              <div style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: theme.colors.textSecondary,
+                letterSpacing: '1px',
+                marginBottom: '20px',
+                textTransform: 'uppercase',
+                fontFamily: theme.fonts.medium,
+              }}>CHECK-IN INFO</div>
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: theme.colors.textSecondary,
+                  letterSpacing: '0.5px',
+                  marginBottom: '6px',
+                  textTransform: 'uppercase',
+                  fontFamily: theme.fonts.medium,
+                }}>Start Time</div>
+                <div style={{
+                  fontSize: '17px',
+                  fontWeight: 600,
+                  color: theme.colors.text,
+                  fontFamily: theme.fonts.semibold,
+                }}>{new Date(checkInStartTime).toLocaleString('ro-RO')}</div>
+              </div>
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: theme.colors.textSecondary,
+                  letterSpacing: '0.5px',
+                  marginBottom: '6px',
+                  textTransform: 'uppercase',
+                  fontFamily: theme.fonts.medium,
+                }}>Estimated Check-out</div>
+                <div style={{
+                  fontSize: '17px',
+                  fontWeight: 600,
+                  color: theme.colors.text,
+                  fontFamily: theme.fonts.semibold,
+                }}>{(() => {
+                  const startTime = new Date(checkInStartTime);
+                  const estimatedCheckOut = new Date(startTime.getTime() + targetHours * 1000);
+                  return estimatedCheckOut.toLocaleString('ro-RO');
+                })()}</div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  } catch (error) {
+    console.error('Error in CheckInScreen:', error);
+    return (
+      <div style={{ padding: '50px', background: '#FF0000', color: '#FFFFFF', fontSize: '20px' }}>
+        <h1>CheckInScreen Error</h1>
+        <p>{error instanceof Error ? error.message : String(error)}</p>
+        <pre>{error instanceof Error ? error.stack : ''}</pre>
+      </div>
+    );
+  }
 }

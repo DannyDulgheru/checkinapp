@@ -19,38 +19,49 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [pausedDuration, setPausedDuration] = useState(0);
   const [pausedAt, setPausedAt] = useState<Date | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load state from localStorage on mount
+  // Load state from AsyncStorage on mount
   useEffect(() => {
-    const savedState = getActiveCheckIn();
-    if (savedState) {
-      const savedStartTime = new Date(savedState.startTime);
-      const now = new Date();
-      
-      setIsCheckedIn(true);
-      setStartTime(savedStartTime);
-      setPausedDuration(savedState.pausedDuration || 0);
+    const loadState = async () => {
+      try {
+        const savedState = await getActiveCheckIn();
+        if (savedState) {
+          const savedStartTime = new Date(savedState.startTime);
+          const now = new Date();
+          
+          setIsCheckedIn(true);
+          setStartTime(savedStartTime);
+          setPausedDuration(savedState.pausedDuration || 0);
 
-      if (savedState.isPaused && savedState.pausedAt) {
-        // If paused, calculate elapsed time up to pause point
-        const pauseTime = new Date(savedState.pausedAt);
-        const elapsed = Math.floor((pauseTime.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
-        setSeconds(elapsed);
-        setIsRunning(false);
-        setPausedAt(pauseTime);
-      } else {
-        // If running, calculate current elapsed time
-        const elapsed = Math.floor((now.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
-        setSeconds(Math.max(0, elapsed));
-        setIsRunning(true);
+          if (savedState.isPaused && savedState.pausedAt) {
+            // If paused, calculate elapsed time up to pause point
+            const pauseTime = new Date(savedState.pausedAt);
+            const elapsed = Math.floor((pauseTime.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
+            setSeconds(elapsed);
+            setIsRunning(false);
+            setPausedAt(pauseTime);
+          } else {
+            // If running, calculate current elapsed time
+            const elapsed = Math.floor((now.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
+            setSeconds(Math.max(0, elapsed));
+            setIsRunning(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading state:', error);
+      } finally {
+        setIsLoading(false);
       }
-    }
+    };
+
+    loadState();
   }, []);
 
   // Update timer when running
   useEffect(() => {
-    if (isRunning && startTime) {
+    if (isRunning && startTime && !isLoading) {
       intervalRef.current = setInterval(() => {
         const now = new Date();
         const elapsed = Math.floor((now.getTime() - startTime.getTime()) / 1000) - pausedDuration;
@@ -68,11 +79,11 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isRunning, startTime, pausedDuration]);
+  }, [isRunning, startTime, pausedDuration, isLoading]);
 
-  // Save state to localStorage whenever it changes
+  // Save state to AsyncStorage whenever it changes
   useEffect(() => {
-    if (isCheckedIn && startTime) {
+    if (!isLoading && isCheckedIn && startTime) {
       const state: ActiveCheckInState = {
         startTime: startTime.toISOString(),
         pausedAt: pausedAt?.toISOString() || null,
@@ -81,7 +92,7 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
       };
       saveActiveCheckIn(state);
     }
-  }, [isCheckedIn, startTime, pausedAt, pausedDuration, isRunning]);
+  }, [isCheckedIn, startTime, pausedAt, pausedDuration, isRunning, isLoading]);
 
   const startCheckIn = () => {
     const now = new Date();
@@ -139,4 +150,3 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
     checkOut,
   };
 };
-

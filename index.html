@@ -2,14 +2,18 @@
 <html lang="ro">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
   <meta name="description" content="Aplicație Check-in cu Timer și Notificări" />
   
   <!-- PWA Meta Tags -->
   <meta name="theme-color" content="#007AFF" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  
+  <!-- iOS PWA Meta Tags -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Check-in App" />
+  <meta name="format-detection" content="telephone=no" />
   
   <!-- Manifest -->
   <link rel="manifest" href="/manifest.json" />
@@ -17,6 +21,8 @@
   <!-- Icons -->
   <link rel="icon" type="image/png" href="/icons/favicon.png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  
   
   <title>Check-in App</title>
 </head>
