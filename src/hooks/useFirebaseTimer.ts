@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { getActiveCheckIn, saveActiveCheckIn, ActiveCheckInState } from '../services/storageService';
+import { getActiveCheckIn, saveActiveCheckIn, subscribeToData, ActiveCheckInState } from '../services/storageService';
+import type { Unsubscribe } from 'firebase/firestore';
 
-interface UsePersistentTimerReturn {
+interface UseFirebaseTimerReturn {
   seconds: number;
   isRunning: boolean;
   isCheckedIn: boolean;
@@ -12,7 +13,7 @@ interface UsePersistentTimerReturn {
   checkOut: () => void;
 }
 
-export const usePersistentTimer = (): UsePersistentTimerReturn => {
+export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
   const [seconds, setSeconds] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isCheckedIn, setIsCheckedIn] = useState(false);
@@ -21,12 +22,19 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
   const [pausedAt, setPausedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const unsubscribeRef = useRef<Unsubscribe | null>(null);
 
-  // Load state from AsyncStorage on mount
+  // Load state from Firebase on mount and subscribe to real-time updates
   useEffect(() => {
-    const loadState = async () => {
+    if (!userId) {
+      setIsLoading(false);
+      return;
+    }
+
+    const loadAndSubscribe = async () => {
       try {
-        const savedState = await getActiveCheckIn();
+        // Load initial state
+        const savedState = await getActiveCheckIn(userId);
         if (savedState) {
           const savedStartTime = new Date(savedState.startTime);
           const now = new Date();
@@ -49,6 +57,42 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
             setIsRunning(true);
           }
         }
+
+        // Subscribe to real-time updates from Firebase
+        const unsubscribe = subscribeToData(userId, (data) => {
+          if (data?.activeCheckIn) {
+            const savedState = data.activeCheckIn;
+            const savedStartTime = new Date(savedState.startTime);
+            const now = new Date();
+            
+            setIsCheckedIn(true);
+            setStartTime(savedStartTime);
+            setPausedDuration(savedState.pausedDuration || 0);
+
+            if (savedState.isPaused && savedState.pausedAt) {
+              const pauseTime = new Date(savedState.pausedAt);
+              const elapsed = Math.floor((pauseTime.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
+              setSeconds(elapsed);
+              setIsRunning(false);
+              setPausedAt(pauseTime);
+            } else {
+              const elapsed = Math.floor((now.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
+              setSeconds(Math.max(0, elapsed));
+              setIsRunning(true);
+              setPausedAt(null);
+            }
+          } else {
+            // No active check-in
+            setIsCheckedIn(false);
+            setIsRunning(false);
+            setStartTime(null);
+            setPausedDuration(0);
+            setPausedAt(null);
+            setSeconds(0);
+          }
+        });
+
+        unsubscribeRef.current = unsubscribe;
       } catch (error) {
         console.error('Error loading state:', error);
       } finally {
@@ -56,8 +100,14 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
       }
     };
 
-    loadState();
-  }, []);
+    loadAndSubscribe();
+
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
+  }, [userId]);
 
   // Update timer when running
   useEffect(() => {
@@ -81,20 +131,22 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
     };
   }, [isRunning, startTime, pausedDuration, isLoading]);
 
-  // Save state to AsyncStorage whenever it changes
+  // Save state to Firebase whenever it changes
   useEffect(() => {
-    if (!isLoading && isCheckedIn && startTime) {
+    if (!isLoading && isCheckedIn && startTime && userId) {
       const state: ActiveCheckInState = {
         startTime: startTime.toISOString(),
         pausedAt: pausedAt?.toISOString() || null,
         pausedDuration: pausedDuration,
         isPaused: !isRunning,
       };
-      saveActiveCheckIn(state);
+      saveActiveCheckIn(userId, state);
     }
-  }, [isCheckedIn, startTime, pausedAt, pausedDuration, isRunning, isLoading]);
+  }, [isCheckedIn, startTime, pausedAt, pausedDuration, isRunning, isLoading, userId]);
 
   const startCheckIn = () => {
+    if (!userId) return;
+    
     const now = new Date();
     setStartTime(now);
     setIsCheckedIn(true);
@@ -105,27 +157,26 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
   };
 
   const pause = () => {
-    if (isRunning && startTime) {
-      const now = new Date();
-      
-      setIsRunning(false);
-      setPausedAt(now);
-      // Don't add to pausedDuration yet - we'll calculate it when resuming
-    }
+    if (!userId || !isRunning || !startTime) return;
+    
+    const now = new Date();
+    setIsRunning(false);
+    setPausedAt(now);
   };
 
   const resume = () => {
-    if (!isRunning && startTime && pausedAt) {
-      const now = new Date();
-      const pauseDuration = Math.floor((now.getTime() - pausedAt.getTime()) / 1000);
-      
-      setPausedDuration((prev) => prev + pauseDuration);
-      setPausedAt(null);
-      setIsRunning(true);
-    }
+    if (!userId || isRunning || !startTime || !pausedAt) return;
+    
+    const now = new Date();
+    const pauseDuration = Math.floor((now.getTime() - pausedAt.getTime()) / 1000);
+    setPausedDuration((prev) => prev + pauseDuration);
+    setPausedAt(null);
+    setIsRunning(true);
   };
 
   const reset = () => {
+    if (!userId) return;
+    
     setSeconds(0);
     setIsRunning(false);
     setIsCheckedIn(false);
@@ -149,3 +200,4 @@ export const usePersistentTimer = (): UsePersistentTimerReturn => {
     checkOut,
   };
 };
+

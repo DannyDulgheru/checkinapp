@@ -2,27 +2,44 @@ import React, { useState, useEffect } from 'react';
 import { getAppSettings, saveSettings, AppSettings } from '../services/storageService';
 import { pushService } from '../services/pushService';
 import { useTheme } from '../contexts/ThemeContext';
-import { IoSunny, IoMoon, IoPhonePortrait, IoCheckmarkCircle, IoNotificationsOutline, IoCheckmark, IoInformationCircleOutline } from 'react-icons/io5';
+import { useAuth } from '../contexts/AuthContext';
+import { IoCheckmarkCircle, IoNotificationsOutline, IoCheckmark, IoInformationCircleOutline } from 'react-icons/io5';
 import './SettingsScreen.css';
 
 export default function SettingsScreen() {
   try {
-    const { theme, isDark, accentColor, themeMode, setThemeMode, setAccentColor } = useTheme();
+    const { theme, isDark, accentColor, setAccentColor } = useTheme();
+    const { user, signOut } = useAuth();
+    const userId = user?.uid || '';
     const [settings, setSettings] = useState<AppSettings>({
       targetHours: 32400,
       notificationsEnabled: false,
     });
     const [hours, setHours] = useState('9');
     const [notificationPermission, setNotificationPermission] = useState<string>('default');
+    const [screenWidth, setScreenWidth] = useState(window.innerWidth);
+    const [screenHeight, setScreenHeight] = useState(window.innerHeight);
 
     useEffect(() => {
-      loadSettings();
-      checkNotificationPermission();
+      const handleResize = () => {
+        setScreenWidth(window.innerWidth);
+        setScreenHeight(window.innerHeight);
+      };
+      window.addEventListener('resize', handleResize);
+      return () => window.removeEventListener('resize', handleResize);
     }, []);
 
+    useEffect(() => {
+      if (userId) {
+        loadSettings();
+      }
+      checkNotificationPermission();
+    }, [userId]);
+
     const loadSettings = async () => {
+      if (!userId) return;
       try {
-        const loadedSettings = await getAppSettings();
+        const loadedSettings = await getAppSettings(userId);
         setSettings(loadedSettings);
         setHours((loadedSettings.targetHours / 3600).toString());
       } catch (error) {
@@ -47,9 +64,9 @@ export default function SettingsScreen() {
         const permission = await pushService.requestPermission();
         setNotificationPermission(permission);
         
-        if (permission === 'granted') {
+        if (permission === 'granted' && userId) {
           setSettings(prev => ({ ...prev, notificationsEnabled: true }));
-          await saveSettings({ ...settings, notificationsEnabled: true });
+          await saveSettings(userId, { ...settings, notificationsEnabled: true });
           window.alert('Succes: Permisiunile pentru notificări au fost acordate!');
         } else {
           window.alert(
@@ -69,11 +86,12 @@ export default function SettingsScreen() {
         return;
       }
 
+      if (!userId) return;
       const targetSeconds = Math.floor(hoursNum * 3600);
       const newSettings = { ...settings, targetHours: targetSeconds };
       
       try {
-        await saveSettings(newSettings);
+        await saveSettings(userId, newSettings);
         setSettings(newSettings);
         window.alert(`Succes: Orele țintă au fost setate la ${hoursNum} ${hoursNum === 1 ? 'oră' : 'ore'}`);
       } catch (error) {
@@ -86,10 +104,6 @@ export default function SettingsScreen() {
       '#FF2D92', '#5AC8FA', '#AF52DE', '#FF6B35', '#00C896'
     ];
 
-    const handleThemeModeChange = (mode: 'light' | 'dark' | 'auto') => {
-      setThemeMode(mode);
-    };
-
     const handleAccentColorChange = (color: string) => {
       setAccentColor(color);
     };
@@ -97,61 +111,85 @@ export default function SettingsScreen() {
     const containerStyle: React.CSSProperties = {
       display: 'flex',
       flexDirection: 'column',
-      backgroundColor: theme.colors.background,
-      paddingTop: 'max(20px, env(safe-area-inset-top))', // iOS notch support
-      minHeight: '100vh',
-      minHeight: '-webkit-fill-available' as any, // iOS Safari
+      backgroundColor: isDark ? '#000000' : theme.colors.background,
+      background: isDark 
+        ? '#000000'
+        : `radial-gradient(ellipse at top, ${theme.colors.primary}05 0%, ${theme.colors.background} 50%)`,
+      paddingTop: `max(${screenHeight < 700 ? '16px' : '20px'}, env(safe-area-inset-top))`,
+      height: '100vh',
       width: '100%',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      overflow: 'hidden',
     };
 
     const contentContainerStyle: React.CSSProperties = {
-      padding: '24px',
-      paddingBottom: '100px',
+      padding: screenWidth < 375 ? '12px' : '16px',
+      paddingBottom: 'calc(130px + env(safe-area-inset-bottom, 0px))',
       display: 'flex',
       flexDirection: 'column',
-      gap: '24px',
+      gap: screenHeight < 700 ? '14px' : '16px',
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      height: '100%',
+      WebkitOverflowScrolling: 'touch',
     };
 
     const sectionStyle: React.CSSProperties = {
       display: 'flex',
       flexDirection: 'column',
-      gap: '16px',
+      gap: screenHeight < 700 ? '10px' : '12px',
     };
 
     const sectionTitleStyle: React.CSSProperties = {
-      fontSize: '32px',
-      fontWeight: 700,
-      color: theme.colors.text,
-      letterSpacing: '-0.5px',
+      fontSize: screenWidth < 375 ? '24px' : screenWidth < 768 ? '28px' : '32px',
+      fontWeight: 800,
+      background: isDark 
+        ? `linear-gradient(135deg, ${theme.colors.text} 0%, ${theme.colors.primary} 100%)`
+        : `linear-gradient(135deg, ${theme.colors.text} 0%, ${theme.colors.primary}AA 100%)`,
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      backgroundClip: 'text',
+      letterSpacing: screenWidth < 375 ? '-0.5px' : '-1px',
       fontFamily: theme.fonts.bold,
+      lineHeight: '1.2',
+      marginBottom: screenHeight < 700 ? '8px' : '10px',
     };
 
     const settingCardStyle: React.CSSProperties = {
       backgroundColor: theme.colors.cardBackground,
-      borderRadius: '24px',
-      padding: '24px',
-      boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
-      border: isDark ? `1px solid ${theme.colors.border}` : 'none',
+      borderRadius: screenWidth < 375 ? '20px' : '24px',
+      padding: screenHeight < 700 ? '16px' : '18px',
+      boxShadow: isDark 
+        ? '0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3)'
+        : '0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.05)',
+      border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(0, 0, 0, 0.05)',
+      transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+      position: 'relative',
+      overflow: 'hidden',
     };
 
     const settingInfoStyle: React.CSSProperties = {
-      marginBottom: '20px',
+      marginBottom: screenHeight < 700 ? '14px' : '16px',
     };
 
     const settingLabelStyle: React.CSSProperties = {
-      fontSize: '17px',
+      fontSize: screenWidth < 375 ? '15px' : '16px',
       fontWeight: 700,
       color: theme.colors.text,
-      marginBottom: '8px',
+      marginBottom: '6px',
       letterSpacing: '-0.3px',
       fontFamily: theme.fonts.bold,
     };
 
     const settingDescriptionStyle: React.CSSProperties = {
-      fontSize: '14px',
+      fontSize: screenWidth < 375 ? '12px' : '13px',
       color: theme.colors.textSecondary,
-      lineHeight: '20px',
-      marginBottom: '16px',
+      lineHeight: screenHeight < 700 ? '18px' : '20px',
+      marginBottom: screenHeight < 700 ? '12px' : '14px',
       fontFamily: theme.fonts.regular,
     };
 
@@ -167,26 +205,36 @@ export default function SettingsScreen() {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: theme.colors.primary,
-      borderRadius: '16px',
-      padding: '14px 24px',
-      gap: '8px',
-      boxShadow: isDark ? '0 2px 4px rgba(0, 0, 0, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.1)',
+      background: `linear-gradient(135deg, ${theme.colors.primary} 0%, ${theme.colors.primary}DD 100%)`,
+      borderRadius: screenWidth < 375 ? '16px' : '18px',
+      padding: screenHeight < 700 ? '14px 24px' : '16px 28px',
+      gap: '10px',
+      boxShadow: isDark 
+        ? `0 6px 20px ${theme.colors.primary}40, 0 3px 10px rgba(0, 0, 0, 0.3)`
+        : `0 6px 20px ${theme.colors.primary}30, 0 3px 10px rgba(0, 0, 0, 0.1)`,
       border: 'none',
       cursor: 'pointer',
-      transition: 'opacity 0.2s',
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      position: 'relative',
+      overflow: 'hidden',
     };
 
     const permissionButtonActiveStyle: React.CSSProperties = {
       ...permissionButtonStyle,
-      backgroundColor: theme.colors.success,
+      background: `linear-gradient(135deg, ${theme.colors.success} 0%, ${theme.colors.success}DD 100%)`,
+      boxShadow: isDark 
+        ? `0 8px 24px ${theme.colors.success}40, 0 4px 12px rgba(0, 0, 0, 0.3)`
+        : `0 8px 24px ${theme.colors.success}30, 0 4px 12px rgba(0, 0, 0, 0.1)`,
     };
 
     const permissionButtonTextStyle: React.CSSProperties = {
-      fontSize: '16px',
+      fontSize: screenWidth < 375 ? '15px' : '16px',
       fontWeight: 700,
-      color: isDark && theme.colors.primary === '#000000' ? '#FFFFFF' : (isDark ? theme.colors.background : '#FFFFFF'),
+      color: '#FFFFFF',
       fontFamily: theme.fonts.bold,
+      letterSpacing: '0.3px',
+      position: 'relative',
+      zIndex: 1,
     };
 
     const permissionButtonTextActiveStyle: React.CSSProperties = {
@@ -203,16 +251,22 @@ export default function SettingsScreen() {
 
     const hoursInputStyle: React.CSSProperties = {
       flex: 1,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: '16px',
-      padding: '14px 16px',
-      fontSize: '18px',
-      fontWeight: 600,
+      background: isDark 
+        ? `linear-gradient(135deg, ${theme.colors.cardBackground} 0%, ${theme.colors.cardBackground}EE 100%)`
+        : `linear-gradient(135deg, ${theme.colors.cardBackground} 0%, ${theme.colors.cardBackground}FF 100%)`,
+      borderRadius: '20px',
+      padding: '16px 20px',
+      fontSize: '20px',
+      fontWeight: 700,
       color: theme.colors.text,
-      border: `1px solid ${theme.colors.border}`,
+      border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)',
       fontFamily: theme.fonts.mono,
       textAlign: 'center',
-      minWidth: '80px',
+      minWidth: '100px',
+      boxShadow: isDark 
+        ? '0 4px 12px rgba(0, 0, 0, 0.2), inset 0 1px 2px rgba(255, 255, 255, 0.05)'
+        : '0 4px 12px rgba(0, 0, 0, 0.08), inset 0 1px 2px rgba(0, 0, 0, 0.03)',
+      transition: 'all 0.3s ease',
     };
 
     const hoursLabelStyle: React.CSSProperties = {
@@ -223,32 +277,58 @@ export default function SettingsScreen() {
     };
 
     const saveButtonStyle: React.CSSProperties = {
-      backgroundColor: theme.colors.primary,
-      borderRadius: '16px',
-      padding: '14px 24px',
-      boxShadow: isDark ? '0 2px 4px rgba(0, 0, 0, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.1)',
+      background: `linear-gradient(135deg, ${theme.colors.primary} 0%, ${theme.colors.primary}DD 100%)`,
+      borderRadius: '20px',
+      padding: '16px 28px',
+      boxShadow: isDark 
+        ? `0 8px 24px ${theme.colors.primary}40, 0 4px 12px rgba(0, 0, 0, 0.3)`
+        : `0 8px 24px ${theme.colors.primary}30, 0 4px 12px rgba(0, 0, 0, 0.1)`,
       border: 'none',
       cursor: 'pointer',
-      transition: 'opacity 0.2s',
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      position: 'relative',
+      overflow: 'hidden',
     };
 
     const saveButtonTextStyle: React.CSSProperties = {
-      color: isDark && theme.colors.primary === '#000000' ? '#FFFFFF' : (isDark ? theme.colors.background : '#FFFFFF'),
-      fontSize: '16px',
+      color: '#FFFFFF',
+      fontSize: '17px',
       fontWeight: 700,
       fontFamily: theme.fonts.bold,
+      letterSpacing: '0.5px',
+      position: 'relative',
+      zIndex: 1,
+    };
+
+    const buttonStyle: React.CSSProperties = {
+      ...permissionButtonStyle,
+      background: `linear-gradient(135deg, ${theme.colors.error || '#FF3B30'} 0%, ${theme.colors.error || '#FF3B30'}DD 100%)`,
+      boxShadow: isDark 
+        ? `0 6px 20px ${theme.colors.error || '#FF3B30'}40, 0 3px 10px rgba(0, 0, 0, 0.3)`
+        : `0 6px 20px ${theme.colors.error || '#FF3B30'}30, 0 3px 10px rgba(0, 0, 0, 0.1)`,
+    };
+
+    const buttonTextStyle: React.CSSProperties = {
+      ...permissionButtonTextStyle,
+      zIndex: 1,
     };
 
     const infoCardStyle: React.CSSProperties = {
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: '24px',
-      padding: '20px',
+      background: isDark 
+        ? `linear-gradient(135deg, ${theme.colors.primary}15 0%, ${theme.colors.cardBackground}EE 100%)`
+        : `linear-gradient(135deg, ${theme.colors.primary}10 0%, ${theme.colors.cardBackground}FF 100%)`,
+      borderRadius: '28px',
+      padding: '24px',
       display: 'flex',
       flexDirection: 'row',
-      gap: '12px',
+      gap: '16px',
       alignItems: 'flex-start',
-      boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
-      border: isDark ? `1px solid ${theme.colors.border}` : 'none',
+      boxShadow: isDark 
+        ? '0 12px 40px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2)'
+        : '0 12px 40px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.08)',
+      border: isDark ? `1px solid ${theme.colors.primary}30` : `1px solid ${theme.colors.primary}20`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
     };
 
     const infoTextStyle: React.CSSProperties = {
@@ -257,47 +337,6 @@ export default function SettingsScreen() {
       color: theme.colors.textSecondary,
       lineHeight: '20px',
       fontFamily: theme.fonts.regular,
-    };
-
-    const themeOptionsStyle: React.CSSProperties = {
-      display: 'flex',
-      flexDirection: 'row',
-      gap: '12px',
-      marginTop: '8px',
-    };
-
-    const themeOptionStyle: React.CSSProperties = {
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '8px',
-      padding: '12px 16px',
-      borderRadius: '20px',
-      backgroundColor: theme.colors.backgroundSecondary,
-      border: '2px solid transparent',
-      cursor: 'pointer',
-      transition: 'opacity 0.2s',
-    };
-
-    const themeOptionActiveStyle: React.CSSProperties = {
-      ...themeOptionStyle,
-      backgroundColor: theme.colors.primary,
-      borderColor: theme.colors.primary,
-    };
-
-    const themeOptionTextStyle: React.CSSProperties = {
-      fontSize: '14px',
-      fontWeight: 600,
-      color: theme.colors.textSecondary,
-      fontFamily: theme.fonts.medium,
-    };
-
-    const themeOptionTextActiveStyle: React.CSSProperties = {
-      ...themeOptionTextStyle,
-      color: '#FFFFFF',
-      fontFamily: theme.fonts.semibold,
     };
 
     const colorPickerStyle: React.CSSProperties = {
@@ -309,74 +348,34 @@ export default function SettingsScreen() {
     };
 
     const colorOptionStyle: React.CSSProperties = {
-      width: '48px',
-      height: '48px',
-      borderRadius: '24px',
+      width: screenWidth < 375 ? '48px' : '52px',
+      height: screenWidth < 375 ? '48px' : '52px',
+      borderRadius: screenWidth < 375 ? '24px' : '26px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       border: '3px solid transparent',
-      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+      boxShadow: isDark 
+        ? '0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2)'
+        : '0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.1)',
       cursor: 'pointer',
-      transition: 'transform 0.2s',
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      position: 'relative',
+      overflow: 'hidden',
     };
 
     const colorOptionActiveStyle: React.CSSProperties = {
       ...colorOptionStyle,
       borderColor: theme.colors.text,
       transform: 'scale(1.1)',
+      boxShadow: isDark 
+        ? `0 6px 20px ${accentColor}60, 0 4px 12px rgba(0, 0, 0, 0.4)`
+        : `0 6px 20px ${accentColor}50, 0 4px 12px rgba(0, 0, 0, 0.2)`,
     };
 
     return (
       <div style={containerStyle}>
         <div style={contentContainerStyle}>
-          <div style={sectionStyle}>
-            <div style={sectionTitleStyle}>APPEARANCE</div>
-            <div style={settingCardStyle}>
-              <div style={settingInfoStyle}>
-                <div style={settingLabelStyle}>Temă</div>
-                <div style={settingDescriptionStyle}>
-                  Alege modul de afișare: deschis, închis sau automat bazat pe setările browserului
-                </div>
-              </div>
-              <div style={themeOptionsStyle}>
-                <button
-                  style={themeMode === 'light' ? themeOptionActiveStyle : themeOptionStyle}
-                  onClick={() => handleThemeModeChange('light')}
-                  onMouseDown={(e) => e.currentTarget.style.opacity = '0.8'}
-                  onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
-                >
-                  <IoSunny size={20} color={themeMode === 'light' ? theme.colors.primary : theme.colors.textSecondary} />
-                  <span style={themeMode === 'light' ? themeOptionTextActiveStyle : themeOptionTextStyle}>
-                    Deschis
-                  </span>
-                </button>
-                <button
-                  style={themeMode === 'dark' ? themeOptionActiveStyle : themeOptionStyle}
-                  onClick={() => handleThemeModeChange('dark')}
-                  onMouseDown={(e) => e.currentTarget.style.opacity = '0.8'}
-                  onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
-                >
-                  <IoMoon size={20} color={themeMode === 'dark' ? theme.colors.primary : theme.colors.textSecondary} />
-                  <span style={themeMode === 'dark' ? themeOptionTextActiveStyle : themeOptionTextStyle}>
-                    Închis
-                  </span>
-                </button>
-                <button
-                  style={themeMode === 'auto' ? themeOptionActiveStyle : themeOptionStyle}
-                  onClick={() => handleThemeModeChange('auto')}
-                  onMouseDown={(e) => e.currentTarget.style.opacity = '0.8'}
-                  onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
-                >
-                  <IoPhonePortrait size={20} color={themeMode === 'auto' ? theme.colors.primary : theme.colors.textSecondary} />
-                  <span style={themeMode === 'auto' ? themeOptionTextActiveStyle : themeOptionTextStyle}>
-                    Automat
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-
           <div style={sectionStyle}>
             <div style={sectionTitleStyle}>ACCENT COLOR</div>
             <div style={settingCardStyle}>
@@ -426,8 +425,18 @@ export default function SettingsScreen() {
               <button
                 style={notificationPermission === 'granted' ? permissionButtonActiveStyle : permissionButtonStyle}
                 onClick={handleRequestNotificationPermission}
-                onMouseDown={(e) => e.currentTarget.style.opacity = '0.8'}
-                onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.96)';
+                  e.currentTarget.style.opacity = '0.9';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.opacity = '1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.opacity = '1';
+                }}
               >
                 {notificationPermission === 'granted' ? (
                   <IoCheckmarkCircle size={24} color="#ffffff" />
@@ -476,6 +485,35 @@ export default function SettingsScreen() {
             <span style={infoTextStyle}>
               Notifications will be sent when you reach the target hours. After that, you'll receive notifications every 5 minutes.
             </span>
+          </div>
+
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>ACCOUNT</div>
+            <div style={settingCardStyle}>
+              <div style={settingInfoStyle}>
+                <div style={settingLabelStyle}>Cont Google</div>
+                <div style={settingDescriptionStyle}>
+                  {user?.email || 'Utilizator conectat'}
+                </div>
+              </div>
+              <button
+                style={buttonStyle}
+                onClick={async () => {
+                  if (window.confirm('Ești sigur că vrei să te deconectezi?')) {
+                    try {
+                      await signOut();
+                    } catch (error) {
+                      console.error('Error signing out:', error);
+                      window.alert('Eroare la deconectare');
+                    }
+                  }
+                }}
+                onMouseDown={(e) => e.currentTarget.style.opacity = '0.8'}
+                onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+              >
+                <span style={buttonTextStyle}>Deconectează-te</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

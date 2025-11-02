@@ -1,5 +1,4 @@
 // Simplified App for testing
-import React from 'react';
 
 export default function AppSimple() {
   return (

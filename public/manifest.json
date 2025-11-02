@@ -4,8 +4,8 @@
   "description": "Aplicație Check-in cu Timer și Notificări",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#FAFAFA",
-  "theme_color": "#007AFF",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "orientation": "portrait",
   "scope": "/",
   "icons": [

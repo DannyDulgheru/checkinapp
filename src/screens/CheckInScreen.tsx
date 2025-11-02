@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { usePersistentTimer } from '../hooks/usePersistentTimer';
+import { useFirebaseTimer } from '../hooks/useFirebaseTimer';
 import { saveCheckIn, clearActiveCheckIn, getActiveCheckIn, getAppSettings } from '../services/storageService';
 import { CheckInRecord } from '../types/checkIn';
 import { pushService } from '../services/pushService';
 import { scheduleNotification, cancelScheduledNotification, scheduleRecurringNotifications } from '../services/notificationService';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import './CheckInScreen.css';
 
 export default function CheckInScreen() {
   try {
     const { theme, isDark } = useTheme();
+    const { user } = useAuth();
+    const userId = user?.uid || '';
     const [screenWidth, setScreenWidth] = useState(window.innerWidth);
     const [screenHeight, setScreenHeight] = useState(window.innerHeight);
 
@@ -29,9 +32,8 @@ export default function CheckInScreen() {
       startCheckIn,
       pause,
       resume,
-      reset,
       checkOut,
-    } = usePersistentTimer();
+    } = useFirebaseTimer(userId);
     const [checkInStartTime, setCheckInStartTime] = useState<string | null>(null);
     const [notificationSent, setNotificationSent] = useState(false);
     const [targetHours, setTargetHours] = useState<number>(32400); // Default 9 hours
@@ -45,21 +47,23 @@ export default function CheckInScreen() {
       
       // Load settings
       const loadSettings = async () => {
+        if (!userId) return;
         try {
-          const settings = await getAppSettings();
+          const settings = await getAppSettings(userId);
           setTargetHours(settings.targetHours);
         } catch (error) {
           console.error('Error loading settings:', error);
         }
       };
       loadSettings();
-    }, []);
+    }, [userId]);
 
     // Update checkInStartTime when isCheckedIn changes
     useEffect(() => {
       const loadState = async () => {
+        if (!userId) return;
         if (isCheckedIn) {
-          const savedState = await getActiveCheckIn();
+          const savedState = await getActiveCheckIn(userId);
           if (savedState) {
             setCheckInStartTime(savedState.startTime);
             
@@ -92,7 +96,7 @@ export default function CheckInScreen() {
       };
       
       loadState();
-    }, [isCheckedIn, targetHours]);
+    }, [isCheckedIn, targetHours, userId]);
 
     // Monitor timer for target hours notification and recurring notifications (fallback when app is open)
     useEffect(() => {
@@ -176,7 +180,7 @@ export default function CheckInScreen() {
           status: 'checked-out',
         };
 
-        await saveCheckIn(record);
+        await saveCheckIn(userId, record);
         
         window.alert('Succes: Check-out realizat cu succes!');
         
@@ -195,7 +199,7 @@ export default function CheckInScreen() {
         }
         
         // Clear saved state and reset
-        await clearActiveCheckIn();
+        await clearActiveCheckIn(userId);
         setNotificationSent(false);
         lastRecurringNotificationRef.current = 0;
         checkOut();
@@ -211,84 +215,118 @@ export default function CheckInScreen() {
     const containerStyle: React.CSSProperties = {
       display: 'flex',
       flexDirection: 'column',
-      backgroundColor: theme.colors.background,
-      paddingTop: 'max(20px, env(safe-area-inset-top))', // iOS notch support
-      minHeight: '100vh',
-      minHeight: '-webkit-fill-available' as any, // iOS Safari
+      backgroundColor: isDark ? '#000000' : theme.colors.background,
+      background: isDark 
+        ? '#000000'
+        : `radial-gradient(ellipse at top, ${theme.colors.primary}05 0%, ${theme.colors.background} 50%)`,
+      paddingTop: `max(${screenHeight < 700 ? '16px' : '20px'}, env(safe-area-inset-top))`,
+      height: '100vh',
       width: '100%',
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      overflow: 'hidden',
     };
 
     const contentContainerStyle: React.CSSProperties = {
       display: 'flex',
       flexDirection: 'column',
       flexGrow: 1,
-      justifyContent: 'center',
-      padding: '24px',
+      justifyContent: 'flex-start',
+      padding: screenHeight < 700 ? '16px' : '20px 16px',
+      paddingTop: screenHeight < 700 ? '24px' : '32px',
       paddingBottom: '100px',
       alignItems: 'center',
-      minHeight: 'calc(100vh - 100px)',
+      gap: screenHeight < 700 ? '16px' : '20px',
+      maxWidth: '100%',
+      overflowY: 'auto',
     };
 
     const timerCardStyle: React.CSSProperties = {
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: '24px',
-      padding: '32px',
+      background: isDark 
+        ? `linear-gradient(135deg, ${theme.colors.cardBackground} 0%, ${theme.colors.cardBackground}EE 100%)`
+        : `linear-gradient(135deg, ${theme.colors.cardBackground} 0%, ${theme.colors.cardBackground}FF 100%)`,
+      borderRadius: screenWidth < 375 ? '24px' : '28px',
+      padding: screenHeight < 700 ? '24px 20px' : '32px 24px',
       width: '100%',
-      maxWidth: '400px',
-      marginBottom: '24px',
+      maxWidth: screenWidth < 375 ? '100%' : screenWidth < 768 ? '380px' : '420px',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
-      border: isDark ? `1px solid ${theme.colors.border}` : 'none',
+      boxShadow: isDark 
+        ? `0 12px 40px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px ${theme.colors.primary}15`
+        : `0 12px 40px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px ${theme.colors.primary}08`,
+      border: isDark ? `1px solid rgba(255, 255, 255, 0.1)` : `1px solid rgba(0, 0, 0, 0.05)`,
+      backdropFilter: 'blur(20px) saturate(180%)',
+      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+      position: 'relative',
+      overflow: 'hidden',
+      transition: 'transform 0.3s ease, box-shadow 0.3s ease',
     };
 
     const timerLabelStyle: React.CSSProperties = {
-      fontSize: '11px',
-      fontWeight: 600,
+      fontSize: screenWidth < 375 ? '11px' : '12px',
+      fontWeight: 700,
       color: theme.colors.textSecondary,
-      letterSpacing: '1px',
-      marginBottom: '12px',
+      letterSpacing: '1.5px',
+      marginBottom: screenHeight < 700 ? '16px' : '20px',
       textTransform: 'uppercase',
-      fontFamily: theme.fonts.medium,
+      fontFamily: theme.fonts.semibold,
+      opacity: 0.7,
     };
 
     const timerTextStyle: React.CSSProperties = {
       fontSize: `${timerFontSize}px`,
-      fontWeight: 700,
-      color: theme.colors.text,
+      fontWeight: 800,
+      background: isDark 
+        ? `linear-gradient(135deg, ${theme.colors.text} 0%, ${theme.colors.primary} 100%)`
+        : `linear-gradient(135deg, ${theme.colors.text} 0%, ${theme.colors.primary}AA 100%)`,
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      backgroundClip: 'text',
       textAlign: 'center',
-      letterSpacing: '-2px',
+      letterSpacing: screenWidth < 375 ? '-2px' : '-3px',
       fontFamily: theme.fonts.bold,
+      lineHeight: '1.1',
+      transition: 'all 0.3s ease',
     };
 
     const buttonContainerStyle: React.CSSProperties = {
       width: '100%',
-      maxWidth: '400px',
+      maxWidth: screenWidth < 375 ? '100%' : screenWidth < 768 ? '380px' : '420px',
       display: 'flex',
       flexDirection: 'column',
-      gap: '12px',
+      gap: screenHeight < 700 ? '12px' : '14px',
     };
 
     const buttonStyle: React.CSSProperties = {
       width: '100%',
-      padding: '16px 24px',
-      borderRadius: '16px',
+      padding: screenHeight < 700 ? '14px 24px' : '16px 28px',
+      borderRadius: screenWidth < 375 ? '16px' : '18px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: theme.colors.primary,
-      boxShadow: isDark ? '0 2px 4px rgba(0, 0, 0, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.1)',
+      background: `linear-gradient(135deg, ${theme.colors.primary} 0%, ${theme.colors.primary}DD 100%)`,
+      boxShadow: isDark 
+        ? `0 6px 20px ${theme.colors.primary}40, 0 3px 10px rgba(0, 0, 0, 0.3)`
+        : `0 6px 20px ${theme.colors.primary}30, 0 3px 10px rgba(0, 0, 0, 0.1)`,
       border: 'none',
       cursor: 'pointer',
-      transition: 'opacity 0.2s',
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+      position: 'relative',
+      overflow: 'hidden',
     };
 
     const buttonTextStyle: React.CSSProperties = {
-      color: isDark && theme.colors.primary === '#000000' ? '#FFFFFF' : (isDark ? theme.colors.background : '#FFFFFF'),
-      fontSize: '17px',
+      color: '#FFFFFF',
+      fontSize: screenWidth < 375 ? '16px' : '17px',
       fontWeight: 700,
       fontFamily: theme.fonts.bold,
+      letterSpacing: '0.3px',
+      position: 'relative',
+      zIndex: 1,
     };
 
     return (
@@ -304,8 +342,18 @@ export default function CheckInScreen() {
               <button
                 style={buttonStyle}
                 onClick={handleCheckIn}
-                onMouseDown={(e) => e.currentTarget.style.opacity = '0.9'}
-                onMouseUp={(e) => e.currentTarget.style.opacity = '1'}
+                onMouseDown={(e) => {
+                  e.currentTarget.style.transform = 'scale(0.98)';
+                  e.currentTarget.style.opacity = '0.9';
+                }}
+                onMouseUp={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.opacity = '1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.opacity = '1';
+                }}
               >
                 <span style={buttonTextStyle}>Check-in</span>
               </button>
@@ -345,27 +393,33 @@ export default function CheckInScreen() {
 
           {isCheckedIn && checkInStartTime && (
             <div style={{
-              backgroundColor: theme.colors.cardBackground,
-              borderRadius: '24px',
-              padding: '24px',
+              background: isDark 
+                ? `linear-gradient(135deg, ${theme.colors.cardBackground} 0%, ${theme.colors.cardBackground}EE 100%)`
+                : `linear-gradient(135deg, ${theme.colors.cardBackground} 0%, ${theme.colors.cardBackground}FF 100%)`,
+              borderRadius: screenWidth < 375 ? '24px' : '28px',
+              padding: screenHeight < 700 ? '20px' : '24px',
               width: '100%',
-              maxWidth: '400px',
-              marginTop: '24px',
-              boxShadow: isDark ? '0 2px 8px rgba(0, 0, 0, 0.3)' : '0 2px 8px rgba(0, 0, 0, 0.08)',
-              border: isDark ? `1px solid ${theme.colors.border}` : 'none',
+              maxWidth: screenWidth < 375 ? '100%' : screenWidth < 768 ? '380px' : '420px',
+              boxShadow: isDark 
+                ? '0 12px 40px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2)'
+                : '0 12px 40px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.08)',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.05)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
             }}>
               <div style={{
-                fontSize: '11px',
-                fontWeight: 600,
+                fontSize: screenWidth < 375 ? '11px' : '12px',
+                fontWeight: 700,
                 color: theme.colors.textSecondary,
-                letterSpacing: '1px',
-                marginBottom: '20px',
+                letterSpacing: '1.5px',
+                marginBottom: screenHeight < 700 ? '16px' : '20px',
                 textTransform: 'uppercase',
-                fontFamily: theme.fonts.medium,
+                fontFamily: theme.fonts.semibold,
+                opacity: 0.7,
               }}>CHECK-IN INFO</div>
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: screenHeight < 700 ? '16px' : '18px' }}>
                 <div style={{
-                  fontSize: '11px',
+                  fontSize: screenWidth < 375 ? '10px' : '11px',
                   fontWeight: 600,
                   color: theme.colors.textSecondary,
                   letterSpacing: '0.5px',
@@ -374,15 +428,15 @@ export default function CheckInScreen() {
                   fontFamily: theme.fonts.medium,
                 }}>Start Time</div>
                 <div style={{
-                  fontSize: '17px',
+                  fontSize: screenWidth < 375 ? '15px' : '16px',
                   fontWeight: 600,
                   color: theme.colors.text,
                   fontFamily: theme.fonts.semibold,
                 }}>{new Date(checkInStartTime).toLocaleString('ro-RO')}</div>
               </div>
-              <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: screenHeight < 700 ? '16px' : '18px' }}>
                 <div style={{
-                  fontSize: '11px',
+                  fontSize: screenWidth < 375 ? '10px' : '11px',
                   fontWeight: 600,
                   color: theme.colors.textSecondary,
                   letterSpacing: '0.5px',
@@ -391,7 +445,7 @@ export default function CheckInScreen() {
                   fontFamily: theme.fonts.medium,
                 }}>Estimated Check-out</div>
                 <div style={{
-                  fontSize: '17px',
+                  fontSize: screenWidth < 375 ? '15px' : '16px',
                   fontWeight: 600,
                   color: theme.colors.text,
                   fontFamily: theme.fonts.semibold,

@@ -1,5 +1,4 @@
 // Simple test component to check rendering
-import React from 'react';
 
 export default function AppTest() {
   return (

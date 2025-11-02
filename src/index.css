@@ -1,13 +1,37 @@
+@font-face {
+  font-family: 'MoMo Trust Display';
+  src: url('/fonts/MomoTrustDisplay-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html {
+  margin: 0;
+  padding: 0;
+  padding-bottom: 0;
+  height: 100%;
+  width: 100%;
+  background-color: #000000;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
 html, body {
   margin: 0;
   padding: 0;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: "MoMo Trust Display", -apple-system, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   height: 100%;
@@ -16,34 +40,69 @@ html, body {
 
 body {
   overflow-x: hidden;
-  background-color: #FAFAFA;
+  overflow-y: hidden;
+  background-color: #000000;
   margin: 0;
   padding: 0;
+  padding-bottom: 0;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
 }
 
 #root {
-  min-height: 100vh;
-  min-height: -webkit-fill-available; /* iOS Safari */
   width: 100%;
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #FAFAFA;
-  /* iOS safe area support */
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  padding-bottom: 0;
+  background-color: #000000;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  /* iOS safe area support - no bottom padding, tab bar handles it */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* iOS PWA specific styles */
 @supports (-webkit-touch-callout: none) {
   /* iOS Safari */
-  html, body {
+  html {
+    min-height: 100vh;
     min-height: -webkit-fill-available;
+    height: 100vh;
+    height: -webkit-fill-available;
+    background-color: #000000;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+  
+  body {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    height: 100vh;
+    height: -webkit-fill-available;
+    background-color: #000000;
+    padding-bottom: 0;
+    margin-bottom: 0;
   }
   
   #root {
+    min-height: 100vh;
     min-height: -webkit-fill-available;
+    height: 100vh;
+    height: -webkit-fill-available;
+    background-color: #000000;
+    padding-bottom: 0;
+    margin-bottom: 0;
   }
 }
