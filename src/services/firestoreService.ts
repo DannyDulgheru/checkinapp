@@ -32,19 +32,18 @@ export const saveActiveCheckInFirestore = async (userId: string, state: ActiveCh
     }
 
     if (state) {
+      // Only save startTime and isPaused to Firebase
+      // pausedAt and pausedDuration are calculated locally
       const data = {
         timer: {
           startTime: state.startTime,
-          pausedAt: state.pausedAt,
-          pausedDuration: state.pausedDuration,
           isPaused: state.isPaused,
-          isCheckedIn: true,
         },
         updatedAt: serverTimestamp(),
       };
       
       await setDoc(userDocRef, data, { merge: true });
-      console.log('[Firestore] Active check-in saved');
+      console.log('[Firestore] Active check-in saved (startTime only)');
     } else {
       await updateDoc(userDocRef, {
         timer: null,
@@ -77,11 +76,11 @@ export const getActiveCheckInFirestore = async (userId: string): Promise<ActiveC
     
     if (docSnapshot.exists()) {
       const data = docSnapshot.data();
-      if (data.timer && data.timer.isCheckedIn) {
+      if (data.timer && data.timer.startTime) {
+        // Only load startTime and isPaused from Firebase
+        // pausedAt and pausedDuration will be calculated locally
         return {
           startTime: data.timer.startTime,
-          pausedAt: data.timer.pausedAt || null,
-          pausedDuration: data.timer.pausedDuration || 0,
           isPaused: data.timer.isPaused || false,
         };
       }
@@ -112,11 +111,10 @@ export const subscribeToTimerFirestore = (
     const unsubscribe = onSnapshot(userDocRef, (docSnapshot) => {
       if (docSnapshot.exists()) {
         const data = docSnapshot.data();
-        if (data.timer && data.timer.isCheckedIn) {
+        if (data.timer && data.timer.startTime) {
+          // Only load startTime and isPaused from Firebase
           callback({
             startTime: data.timer.startTime,
-            pausedAt: data.timer.pausedAt || null,
-            pausedDuration: data.timer.pausedDuration || 0,
             isPaused: data.timer.isPaused || false,
           });
         } else {

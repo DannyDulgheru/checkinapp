@@ -72,7 +72,8 @@ export default function CheckInScreen() {
               checkInIdRef.current = `checkin-${Date.now()}`;
               const startTimestamp = new Date(savedState.startTime).getTime();
               const now = Date.now();
-              const elapsed = Math.floor((now - startTimestamp) / 1000) - (savedState.pausedDuration || 0);
+              // Calculate elapsed time from start to now (pausedDuration is calculated locally in timer)
+              const elapsed = Math.floor((now - startTimestamp) / 1000);
               
               // Only schedule if we haven't reached target hours yet
               if (elapsed < targetHours) {

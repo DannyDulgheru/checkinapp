@@ -2,7 +2,6 @@ import { CheckInRecord } from '../types/checkIn';
 import {
   saveActiveCheckInFirestore,
   getActiveCheckInFirestore,
-  subscribeToTimerFirestore,
   saveCheckInFirestore,
   getCheckInHistoryFirestore,
   deleteCheckInFirestore,
@@ -14,10 +13,9 @@ import {
 } from './firestoreService';
 
 export interface ActiveCheckInState {
-  startTime: string; // ISO string
-  pausedAt: string | null; // ISO string when paused
-  pausedDuration: number; // Total paused time in seconds
-  isPaused: boolean;
+  startTime: string; // ISO string - only this is saved to Firebase
+  isPaused: boolean; // Only this is saved to Firebase
+  // pausedAt and pausedDuration are calculated locally, not saved to Firebase
 }
 
 export const saveCheckIn = async (userId: string, record: CheckInRecord): Promise<void> => {
@@ -106,14 +104,16 @@ export const getAppSettings = async (userId: string): Promise<AppSettings> => {
 };
 
 // Subscribe to real-time data updates - requires userId
+// Note: Timer subscription removed to reduce Firebase writes - timer is loaded once on mount
 export const subscribeToData = (
   userId: string,
   callback: (data: { activeCheckIn: ActiveCheckInState | null; checkInHistory?: CheckInRecord[]; settings?: AppSettings }) => void
 ): (() => void) | null => {
-  let timerUnsubscribe: (() => void) | null = null;
   let historyUnsubscribe: (() => void) | null = null;
   let settingsUnsubscribe: (() => void) | null = null;
 
+  // Timer is loaded once on mount via getActiveCheckIn, not via subscription
+  // This reduces Firebase reads/writes significantly
   const activeCheckIn: { current: ActiveCheckInState | null } = { current: null };
   const history: { current: CheckInRecord[] } = { current: [] };
   const settings: { current: AppSettings } = { current: { targetHours: 32400, notificationsEnabled: false } };
@@ -126,26 +126,19 @@ export const subscribeToData = (
     });
   };
 
-  // Subscribe to timer
-  timerUnsubscribe = subscribeToTimerFirestore(userId, (state) => {
-    activeCheckIn.current = state;
-    notifyCallback();
-  });
-
-  // Subscribe to history
+  // Subscribe to history (real-time sync for history)
   historyUnsubscribe = subscribeToHistoryFirestore(userId, (records) => {
     history.current = records;
     notifyCallback();
   });
 
-  // Subscribe to settings
+  // Subscribe to settings (real-time sync for settings)
   settingsUnsubscribe = subscribeToSettingsFirestore(userId, (appSettings) => {
     settings.current = appSettings;
     notifyCallback();
   });
 
   return () => {
-    if (timerUnsubscribe && typeof timerUnsubscribe === 'function') timerUnsubscribe();
     if (historyUnsubscribe && typeof historyUnsubscribe === 'function') historyUnsubscribe();
     if (settingsUnsubscribe && typeof settingsUnsubscribe === 'function') settingsUnsubscribe();
   };

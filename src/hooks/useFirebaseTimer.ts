@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getActiveCheckIn, saveActiveCheckIn, subscribeToData, ActiveCheckInState } from '../services/storageService';
+import { getActiveCheckIn, saveActiveCheckIn, ActiveCheckInState } from '../services/storageService';
 
 interface UseFirebaseTimerReturn {
   seconds: number;
@@ -21,77 +21,42 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
   const [pausedAt, setPausedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  // Load state from Firebase on mount and subscribe to real-time updates
+  // Load state from Firebase once on mount (no real-time subscription)
   useEffect(() => {
     if (!userId) {
       setIsLoading(false);
       return;
     }
 
-    const loadAndSubscribe = async () => {
+    const loadState = async () => {
       try {
-        // Load initial state
+        // Load initial state only once
         const savedState = await getActiveCheckIn(userId);
-        if (savedState) {
+        if (savedState && savedState.startTime) {
           const savedStartTime = new Date(savedState.startTime);
           const now = new Date();
           
           setIsCheckedIn(true);
           setStartTime(savedStartTime);
-          setPausedDuration(savedState.pausedDuration || 0);
-
-          if (savedState.isPaused && savedState.pausedAt) {
-            // If paused, calculate elapsed time up to pause point
-            const pauseTime = new Date(savedState.pausedAt);
-            const elapsed = Math.floor((pauseTime.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
-            setSeconds(elapsed);
+          setPausedDuration(0); // Reset paused duration, will calculate from pause/resume locally
+          
+          if (savedState.isPaused) {
+            // If paused, we don't know when it was paused, so show elapsed time when loaded
+            // User will resume and we'll calculate pause duration then
             setIsRunning(false);
-            setPausedAt(pauseTime);
+            setPausedAt(null); // We don't store pausedAt in Firebase anymore
+            // Calculate elapsed time from start to now
+            const elapsed = Math.floor((now.getTime() - savedStartTime.getTime()) / 1000);
+            setSeconds(Math.max(0, elapsed));
           } else {
-            // If running, calculate current elapsed time
-            const elapsed = Math.floor((now.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
+            // If running, calculate current elapsed time locally
+            const elapsed = Math.floor((now.getTime() - savedStartTime.getTime()) / 1000);
             setSeconds(Math.max(0, elapsed));
             setIsRunning(true);
+            setPausedAt(null);
           }
         }
-
-        // Subscribe to real-time updates from Firebase
-        const unsubscribe = subscribeToData(userId, (data) => {
-          if (data?.activeCheckIn) {
-            const savedState = data.activeCheckIn;
-            const savedStartTime = new Date(savedState.startTime);
-            const now = new Date();
-            
-            setIsCheckedIn(true);
-            setStartTime(savedStartTime);
-            setPausedDuration(savedState.pausedDuration || 0);
-
-            if (savedState.isPaused && savedState.pausedAt) {
-              const pauseTime = new Date(savedState.pausedAt);
-              const elapsed = Math.floor((pauseTime.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
-              setSeconds(elapsed);
-              setIsRunning(false);
-              setPausedAt(pauseTime);
-            } else {
-              const elapsed = Math.floor((now.getTime() - savedStartTime.getTime()) / 1000) - savedState.pausedDuration;
-              setSeconds(Math.max(0, elapsed));
-              setIsRunning(true);
-              setPausedAt(null);
-            }
-          } else {
-            // No active check-in
-            setIsCheckedIn(false);
-            setIsRunning(false);
-            setStartTime(null);
-            setPausedDuration(0);
-            setPausedAt(null);
-            setSeconds(0);
-          }
-        });
-
-        unsubscribeRef.current = unsubscribe;
       } catch (error) {
         console.error('Error loading state:', error);
       } finally {
@@ -99,16 +64,10 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
       }
     };
 
-    loadAndSubscribe();
-
-    return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-      }
-    };
+    loadState();
   }, [userId]);
 
-  // Update timer when running
+  // Update timer when running (calculate locally, no Firebase writes)
   useEffect(() => {
     if (isRunning && startTime && !isLoading) {
       intervalRef.current = setInterval(() => {
@@ -130,19 +89,7 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
     };
   }, [isRunning, startTime, pausedDuration, isLoading]);
 
-  // Save state to Firebase whenever it changes
-  useEffect(() => {
-    if (!isLoading && isCheckedIn && startTime && userId) {
-      const state: ActiveCheckInState = {
-        startTime: startTime.toISOString(),
-        pausedAt: pausedAt?.toISOString() || null,
-        pausedDuration: pausedDuration,
-        isPaused: !isRunning,
-      };
-      saveActiveCheckIn(userId, state);
-    }
-  }, [isCheckedIn, startTime, pausedAt, pausedDuration, isRunning, isLoading, userId]);
-
+  // Save to Firebase ONLY on user actions, not continuously
   const startCheckIn = () => {
     if (!userId) return;
     
@@ -153,6 +100,15 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
     setPausedDuration(0);
     setPausedAt(null);
     setSeconds(0);
+    
+    // Save to Firebase only when check-in starts
+    const state: ActiveCheckInState = {
+      startTime: now.toISOString(),
+      isPaused: false,
+    };
+    saveActiveCheckIn(userId, state).catch(error => {
+      console.error('Error saving check-in start:', error);
+    });
   };
 
   const pause = () => {
@@ -161,16 +117,35 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
     const now = new Date();
     setIsRunning(false);
     setPausedAt(now);
+    
+    // Save pause state to Firebase
+    const state: ActiveCheckInState = {
+      startTime: startTime.toISOString(),
+      isPaused: true,
+    };
+    saveActiveCheckIn(userId, state).catch(error => {
+      console.error('Error saving pause:', error);
+    });
   };
 
   const resume = () => {
     if (!userId || isRunning || !startTime || !pausedAt) return;
     
     const now = new Date();
+    // Calculate pause duration locally
     const pauseDuration = Math.floor((now.getTime() - pausedAt.getTime()) / 1000);
     setPausedDuration((prev) => prev + pauseDuration);
     setPausedAt(null);
     setIsRunning(true);
+    
+    // Save resume state to Firebase
+    const state: ActiveCheckInState = {
+      startTime: startTime.toISOString(),
+      isPaused: false,
+    };
+    saveActiveCheckIn(userId, state).catch(error => {
+      console.error('Error saving resume:', error);
+    });
   };
 
   const reset = () => {
@@ -182,9 +157,16 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
     setStartTime(null);
     setPausedDuration(0);
     setPausedAt(null);
+    
+    // Clear timer from Firebase
+    saveActiveCheckIn(userId, null).catch(error => {
+      console.error('Error clearing timer:', error);
+    });
   };
 
   const checkOut = () => {
+    // checkOut will be handled by CheckInScreen which saves to history
+    // Here we just reset the local state
     reset();
   };
 
@@ -199,4 +181,3 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
     checkOut,
   };
 };
-
