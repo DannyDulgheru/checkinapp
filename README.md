@@ -1,114 +1,104 @@
-# Check-in App (React Native iOS)
+# Check-in App
 
-A React Native application for tracking check-in and check-out times with notifications.
+A PWA (Progressive Web App) for tracking work check-ins with a timer, history, and Firebase synchronization.
 
 ## Features
 
-- ⏰ Check-in/Check-out timer
-- 📋 History tracking
-- 🔔 Notifications at 9 hours and every 5 minutes after
-- 💾 Persistent storage using AsyncStorage
-- 📱 Native iOS app
+- ⏱️ **Timer**: Start, pause, and resume check-in sessions
+- 📊 **History**: View all past check-in sessions
+- 🔐 **Authentication**: Email/password login with Firebase
+- ☁️ **Cloud Sync**: All data synced to Firebase Firestore
+- 📱 **PWA**: Installable on mobile devices
+- 🎨 **Theme Support**: Light and dark themes
+- 🔔 **Notifications**: Get notified when reaching target hours
 
-## Prerequisites
+## Tech Stack
 
-- Node.js (v16 or higher)
-- npm or yarn
-- iOS Simulator (for testing) or physical iOS device
-- Xcode (for iOS development)
-- Expo CLI
+- **React** 19.1.0
+- **TypeScript**
+- **Vite** 6.0.5
+- **Firebase** 12.5.0 (Auth, Firestore)
+- **React Router DOM** 7.1.0
+- **React Icons** 5.4.0
 
-## Installation
+## Getting Started
 
-1. Install dependencies:
+### Prerequisites
+
+- Node.js 18+ and npm
+
+### Installation
+
 ```bash
 npm install
 ```
 
-2. Start the Expo development server:
+### Development
+
 ```bash
-npm start
+npm run dev
 ```
 
-3. For iOS:
+App will be available at `http://localhost:3000`
+
+### Build
+
 ```bash
-npm run ios
+npm run build
 ```
 
-This will:
-- Start the Metro bundler
-- Open the iOS Simulator (if Xcode is installed)
-- Install and run the app
+Build output will be in `dist/` directory.
 
-## Running on a Physical iOS Device
+### Deploy
 
-1. Install the Expo Go app from the App Store on your iOS device
-2. Make sure your computer and device are on the same Wi-Fi network
-3. Run `npm start` or `npm run ios`
-4. Scan the QR code with your device's camera or the Expo Go app
-5. The app will load on your device
+The app is configured for deployment on:
+- **Vercel**: See `VERCEL_DEPLOY.md`
+- **Firebase Hosting**: See Firebase docs
+
+## Firebase Setup
+
+1. Create a Firebase project at https://console.firebase.google.com
+2. Enable **Authentication** → Email/Password provider
+3. Enable **Firestore Database**
+4. Update Firebase config in `src/services/firebase.ts`
+5. Set Firestore rules:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /checkinData/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+6. Add your domain to Firebase Authorized domains (Authentication → Settings)
 
 ## Project Structure
 
 ```
-appmobile/
-├── src/
-│   ├── screens/         # App screens (CheckInScreen, HistoryScreen)
-│   ├── services/        # Services (storage, notifications, push)
-│   ├── hooks/          # Custom React hooks
-│   ├── types/          # TypeScript type definitions
-│   └── App.tsx         # Navigation setup
-├── App.tsx             # Root App component
-├── index.js            # Entry point
-├── app.json            # Expo configuration
-└── package.json        # Dependencies
+src/
+├── components/       # Reusable components
+├── contexts/         # React contexts (Auth, Theme)
+├── hooks/            # Custom React hooks
+├── screens/          # Main app screens
+├── services/         # Firebase and data services
+├── types/            # TypeScript type definitions
+└── utils/            # Utility functions
 ```
 
-## Technologies Used
+## Generate Icons
 
-- React Native
-- Expo
-- TypeScript
-- React Navigation
-- AsyncStorage
-- Expo Notifications
-- React Native Safe Area Context
+To regenerate app icons:
 
-## Development
-
-The app has been converted from a React web app to React Native. Key changes:
-
-- **Storage**: Migrated from `localStorage` to `@react-native-async-storage/async-storage`
-- **Notifications**: Migrated from Web Notifications API to Expo Notifications
-- **Components**: Converted from HTML elements (`div`, `button`, etc.) to React Native components (`View`, `TouchableOpacity`, `Text`)
-- **Styling**: Converted from CSS to React Native StyleSheet
-- **Navigation**: Implemented using React Navigation instead of manual tab switching
-
-## Building for Production
-
-To build for production iOS:
-
-1. Install EAS CLI:
 ```bash
-npm install -g eas-cli
+npm run generate-icons
 ```
 
-2. Configure your project:
-```bash
-eas build:configure
-```
-
-3. Build for iOS:
-```bash
-eas build --platform ios
-```
-
-## Troubleshooting
-
-- **Metro bundler issues**: Clear cache with `npm start -- --reset-cache`
-- **iOS Simulator not opening**: Make sure Xcode is installed and Command Line Tools are set up
-- **Notification permissions**: The app will request notification permissions on first launch
+Icons are generated in `public/icons/` directory.
 
 ## License
 
-Private
+Private project

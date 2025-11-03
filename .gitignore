@@ -1,92 +1,40 @@
-# OSX
-#
-.DS_Store
-
-# Xcode
-#
-build/
-*.pbxuser
-!default.pbxuser
-*.mode1v3
-!default.mode1v3
-*.mode2v3
-!default.mode2v3
-*.perspectivev3
-!default.perspectivev3
-xcuserdata
-*.xccheckout
-*.moved-aside
-DerivedData
-*.hmap
-*.ipa
-*.xcuserstate
-project.xcworkspace
-
-# Android/IntelliJ
-#
-build/
-.idea
-.gradle
-local.properties
-*.iml
-*.hprof
-.cxx/
-*.keystore
-!debug.keystore
-
-# node.js
-#
+# Dependencies
 node_modules/
-npm-debug.log
-yarn-error.log
+package-lock.json
 
-# fastlane
-#
-# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
-# screenshots whenever they are needed.
-# For more information about the recommended setup visit:
-# https://docs.fastlane.tools/best-practices/source-control/
-
-**/fastlane/report.xml
-**/fastlane/Preview.html
-**/fastlane/screenshots
-**/fastlane/test_output
-
-# Bundle artifact
-*.jsbundle
-
-# Ruby / CocoaPods
-/ios/Pods/
-/vendor/bundle/
-
-# Expo
-.expo/
-.expo-shared/
+# Build outputs
 dist/
-web-build/
+build/
+.vite/
 
-# Native
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+# Environment variables
+.env
+.env.local
+.env.*.local
 
-# Metro
-.metro-health-check*
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-# Debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# MacOS
+# OS
 .DS_Store
-*.pem
+Thumbs.db
 
-# local env files
-.env*.local
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# typescript
+# TypeScript
 *.tsbuildinfo
+
+# Testing
+coverage/
+
+# Misc
+.cache/
+temp/

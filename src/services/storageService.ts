@@ -1,8 +1,5 @@
 import { CheckInRecord } from '../types/checkIn';
 import {
-  AppSettings,
-} from './jsonStorageService';
-import {
   saveActiveCheckInFirestore,
   getActiveCheckInFirestore,
   subscribeToTimerFirestore,
@@ -154,5 +151,8 @@ export const subscribeToData = (
   };
 };
 
-// Export AppSettings type
-export type { AppSettings };
+// AppSettings type definition
+export interface AppSettings {
+  targetHours: number;
+  notificationsEnabled: boolean;
+}
