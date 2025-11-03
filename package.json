@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "vite"
+    "start": "vite",
+    "generate-icons": "node scripts/generateIcons.js"
   },
   "dependencies": {
     "firebase": "^12.5.0",
