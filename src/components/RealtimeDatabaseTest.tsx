@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { db, firebaseInitialized } from '../services/firebase';
@@ -19,7 +19,7 @@ export default function RealtimeDatabaseTest() {
   const [lastTestData, setLastTestData] = useState<any>(null);
   const [subscriptionActive, setSubscriptionActive] = useState(false);
 
-  const addResult = (name: string, status: 'success' | 'error', message: string) => {
+  const addResult = (name: string, status: 'success' | 'error' | 'pending', message: string) => {
     setTestResults(prev => [...prev, {
       name,
       status,

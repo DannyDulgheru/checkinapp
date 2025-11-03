@@ -3,14 +3,9 @@ import {
   doc, 
   setDoc, 
   getDoc, 
-  collection,
-  addDoc,
   updateDoc,
-  deleteDoc,
   onSnapshot,
-  serverTimestamp,
-  type Unsubscribe,
-  type Firestore
+  serverTimestamp
 } from 'firebase/firestore';
 import { CheckInRecord } from '../types/checkIn';
 import { ActiveCheckInState, AppSettings } from './storageService';
