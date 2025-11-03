@@ -8,13 +8,13 @@ import { getAuth, type Auth } from 'firebase/auth';
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyDTauUhNkURS_IqyFqpSD-3tcipjP2FH-w",
-  authDomain: "dandulgheru-e5fcc.firebaseapp.com",
-  projectId: "dandulgheru-e5fcc",
-  storageBucket: "dandulgheru-e5fcc.firebasestorage.app",
-  messagingSenderId: "1088387489759",
-  appId: "1:1088387489759:web:76f2473dc96820a9b62e6a",
-  measurementId: "G-R2CEV3NQ2Q"
+  apiKey: "AIzaSyA1yFmfq50p1O_ZNNnqhxtE7uo0P8HcRdw",
+  authDomain: "smmaudit-55e97.firebaseapp.com",
+  projectId: "smmaudit-55e97",
+  storageBucket: "smmaudit-55e97.firebasestorage.app",
+  messagingSenderId: "637886859945",
+  appId: "1:637886859945:web:df2a4720acaea83fdbb7b8",
+  measurementId: "G-T3CRWF51RF"
 };
 
 let db: Firestore | null = null;
