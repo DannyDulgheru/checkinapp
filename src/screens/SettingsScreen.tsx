@@ -4,6 +4,7 @@ import { pushService } from '../services/pushService';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { IoCheckmarkCircle, IoNotificationsOutline, IoCheckmark, IoInformationCircleOutline } from 'react-icons/io5';
+import RealtimeDatabaseTest from '../components/RealtimeDatabaseTest';
 import './SettingsScreen.css';
 
 export default function SettingsScreen() {
@@ -493,7 +494,7 @@ export default function SettingsScreen() {
               <div style={settingInfoStyle}>
                 <div style={settingLabelStyle}>Cont Google</div>
                 <div style={settingDescriptionStyle}>
-                  {user?.email || 'Utilizator conectat'}
+                  {user?.email || 'Utilizator neconectat'}
                 </div>
               </div>
               <button
@@ -513,6 +514,13 @@ export default function SettingsScreen() {
               >
                 <span style={buttonTextStyle}>Deconectează-te</span>
               </button>
+            </div>
+          </div>
+
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>FIREBASE TEST</div>
+            <div style={settingCardStyle}>
+              <RealtimeDatabaseTest />
             </div>
           </div>
         </div>

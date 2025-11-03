@@ -13,10 +13,11 @@ export default defineConfig({
     port: 3000,
     host: true,
     https: false, // Set to true for production with SSL certificate
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    },
+    // Removed COEP headers as they conflict with Firebase Realtime Database long polling
+    // headers: {
+    //   'Cross-Origin-Embedder-Policy': 'require-corp',
+    //   'Cross-Origin-Opener-Policy': 'same-origin',
+    // },
   },
   build: {
     outDir: 'dist',

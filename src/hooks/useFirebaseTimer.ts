@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { getActiveCheckIn, saveActiveCheckIn, subscribeToData, ActiveCheckInState } from '../services/storageService';
-import type { Unsubscribe } from 'firebase/firestore';
 
 interface UseFirebaseTimerReturn {
   seconds: number;
@@ -22,7 +21,7 @@ export const useFirebaseTimer = (userId: string): UseFirebaseTimerReturn => {
   const [pausedAt, setPausedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const unsubscribeRef = useRef<Unsubscribe | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Load state from Firebase on mount and subscribe to real-time updates
   useEffect(() => {

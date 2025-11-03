@@ -1,15 +1,20 @@
 import { CheckInRecord } from '../types/checkIn';
 import {
-  loadFromJsonAsync,
-  saveToJson,
-  addCheckInRecord,
-  updateActiveCheckIn,
-  deleteCheckInRecord,
-  updateSettings,
-  getSettings,
   AppSettings,
-  subscribeToData,
 } from './jsonStorageService';
+import {
+  saveActiveCheckInFirestore,
+  getActiveCheckInFirestore,
+  subscribeToTimerFirestore,
+  saveCheckInFirestore,
+  getCheckInHistoryFirestore,
+  deleteCheckInFirestore,
+  clearHistoryFirestore,
+  saveSettingsFirestore,
+  getAppSettingsFirestore,
+  subscribeToHistoryFirestore,
+  subscribeToSettingsFirestore,
+} from './firestoreService';
 
 export interface ActiveCheckInState {
   startTime: string; // ISO string
@@ -20,7 +25,7 @@ export interface ActiveCheckInState {
 
 export const saveCheckIn = async (userId: string, record: CheckInRecord): Promise<void> => {
   try {
-    await addCheckInRecord(userId, record);
+    await saveCheckInFirestore(userId, record);
   } catch (error) {
     console.error('Error saving check-in:', error);
     throw error;
@@ -29,8 +34,7 @@ export const saveCheckIn = async (userId: string, record: CheckInRecord): Promis
 
 export const getCheckInHistory = async (userId: string): Promise<CheckInRecord[]> => {
   try {
-    const data = await loadFromJsonAsync(userId);
-    return data.checkInHistory || [];
+    return await getCheckInHistoryFirestore(userId);
   } catch (error) {
     console.error('Error loading check-in history:', error);
     return [];
@@ -39,10 +43,7 @@ export const getCheckInHistory = async (userId: string): Promise<CheckInRecord[]
 
 export const clearHistory = async (userId: string): Promise<void> => {
   try {
-    const data = await loadFromJsonAsync(userId);
-    data.checkInHistory = [];
-    data.lastSync = new Date().toISOString();
-    await saveToJson(userId, data);
+    await clearHistoryFirestore(userId);
   } catch (error) {
     console.error('Error clearing history:', error);
     throw error;
@@ -50,9 +51,9 @@ export const clearHistory = async (userId: string): Promise<void> => {
 };
 
 // Active check-in state management - requires userId
-export const saveActiveCheckIn = async (userId: string, state: ActiveCheckInState): Promise<void> => {
+export const saveActiveCheckIn = async (userId: string, state: ActiveCheckInState | null): Promise<void> => {
   try {
-    await updateActiveCheckIn(userId, state);
+    await saveActiveCheckInFirestore(userId, state);
   } catch (error) {
     console.error('Error saving active check-in:', error);
   }
@@ -60,8 +61,7 @@ export const saveActiveCheckIn = async (userId: string, state: ActiveCheckInStat
 
 export const getActiveCheckIn = async (userId: string): Promise<ActiveCheckInState | null> => {
   try {
-    const data = await loadFromJsonAsync(userId);
-    return data.activeCheckIn || null;
+    return await getActiveCheckInFirestore(userId);
   } catch (error) {
     console.error('Error loading active check-in:', error);
     return null;
@@ -70,7 +70,7 @@ export const getActiveCheckIn = async (userId: string): Promise<ActiveCheckInSta
 
 export const clearActiveCheckIn = async (userId: string): Promise<void> => {
   try {
-    await updateActiveCheckIn(userId, null);
+    await saveActiveCheckInFirestore(userId, null);
   } catch (error) {
     console.error('Error clearing active check-in:', error);
   }
@@ -79,7 +79,7 @@ export const clearActiveCheckIn = async (userId: string): Promise<void> => {
 // Delete individual check-in record - requires userId
 export const deleteCheckIn = async (userId: string, id: string): Promise<void> => {
   try {
-    await deleteCheckInRecord(userId, id);
+    await deleteCheckInFirestore(userId, id);
   } catch (error) {
     console.error('Error deleting check-in:', error);
     throw error;
@@ -89,7 +89,7 @@ export const deleteCheckIn = async (userId: string, id: string): Promise<void> =
 // Settings management - requires userId
 export const saveSettings = async (userId: string, settings: AppSettings): Promise<void> => {
   try {
-    await updateSettings(userId, settings);
+    await saveSettingsFirestore(userId, settings);
   } catch (error) {
     console.error('Error saving settings:', error);
     throw error;
@@ -98,7 +98,7 @@ export const saveSettings = async (userId: string, settings: AppSettings): Promi
 
 export const getAppSettings = async (userId: string): Promise<AppSettings> => {
   try {
-    return await getSettings(userId);
+    return await getAppSettingsFirestore(userId);
   } catch (error) {
     console.error('Error loading settings:', error);
     return {
@@ -109,7 +109,50 @@ export const getAppSettings = async (userId: string): Promise<AppSettings> => {
 };
 
 // Subscribe to real-time data updates - requires userId
-export { subscribeToData };
+export const subscribeToData = (
+  userId: string,
+  callback: (data: { activeCheckIn: ActiveCheckInState | null; checkInHistory?: CheckInRecord[]; settings?: AppSettings }) => void
+): (() => void) | null => {
+  let timerUnsubscribe: (() => void) | null = null;
+  let historyUnsubscribe: (() => void) | null = null;
+  let settingsUnsubscribe: (() => void) | null = null;
+
+  const activeCheckIn: { current: ActiveCheckInState | null } = { current: null };
+  const history: { current: CheckInRecord[] } = { current: [] };
+  const settings: { current: AppSettings } = { current: { targetHours: 32400, notificationsEnabled: false } };
+
+  const notifyCallback = () => {
+    callback({
+      activeCheckIn: activeCheckIn.current,
+      checkInHistory: history.current,
+      settings: settings.current,
+    });
+  };
+
+  // Subscribe to timer
+  timerUnsubscribe = subscribeToTimerFirestore(userId, (state) => {
+    activeCheckIn.current = state;
+    notifyCallback();
+  });
+
+  // Subscribe to history
+  historyUnsubscribe = subscribeToHistoryFirestore(userId, (records) => {
+    history.current = records;
+    notifyCallback();
+  });
+
+  // Subscribe to settings
+  settingsUnsubscribe = subscribeToSettingsFirestore(userId, (appSettings) => {
+    settings.current = appSettings;
+    notifyCallback();
+  });
+
+  return () => {
+    if (timerUnsubscribe && typeof timerUnsubscribe === 'function') timerUnsubscribe();
+    if (historyUnsubscribe && typeof historyUnsubscribe === 'function') historyUnsubscribe();
+    if (settingsUnsubscribe && typeof settingsUnsubscribe === 'function') settingsUnsubscribe();
+  };
+};
 
 // Export AppSettings type
 export type { AppSettings };
